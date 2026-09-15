@@ -1,0 +1,1442 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>블랙미러 인터랙티브 시네마 (Standalone All-in-One)</title>
+  <meta name="description" content="단일 HTML 파일로 동작하는 넷플릭스 밴더스내치 스타일 인터랙티브 비디오 플랫폼">
+  <style>
+    /* ==========================================================================
+       1. 디자인 시스템 & 글로벌 스타일
+       ========================================================================== */
+    :root {
+      --bg-color: #08080c;
+      --surface-color: rgba(18, 18, 26, 0.75);
+      --surface-border: rgba(255, 255, 255, 0.12);
+      --accent-red: #e50914;
+      --accent-glow: rgba(229, 9, 20, 0.5);
+      --accent-cyan: #00f2fe;
+      --accent-cyan-glow: rgba(0, 242, 254, 0.4);
+      --text-main: #f5f5f7;
+      --text-muted: #8e8e93;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", Roboto, "Helvetica Neue", "Malgun Gothic", sans-serif;
+      --hud-transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-color);
+      font-family: var(--font-sans);
+      color: var(--text-main);
+    }
+
+    /* 플레이어 메인 래퍼 */
+    .player-wrapper {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(circle at center, #151520 0%, #060609 100%);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    /* 비디오 뷰포트 레이어 */
+    .video-stage {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .video-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      opacity: 0;
+      transition: opacity 0.5s ease-in-out;
+      pointer-events: none;
+    }
+
+    .video-layer.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* 캔버스 시뮬레이터 (영상 파일이 없거나 데모 모드일 때) */
+    #simulatorCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+      object-fit: contain;
+    }
+
+    #simulatorCanvas.active {
+      display: block;
+    }
+
+    /* 시네마틱 비네트 & 선택지 딤 레이어 */
+    .cinematic-vignette {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle, rgba(0,0,0,0) 50%, rgba(0,0,0,0.8) 100%);
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .choice-dimmer {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 55%;
+      background: linear-gradient(to top, rgba(5,5,8,0.95) 0%, rgba(5,5,8,0.65) 50%, transparent 100%);
+      opacity: 0;
+      transition: opacity 0.6s ease;
+      pointer-events: none;
+      z-index: 6;
+    }
+
+    .choice-dimmer.visible {
+      opacity: 1;
+    }
+
+    /* 상단 글로벌 HUD */
+    .top-hud {
+      position: absolute;
+      top: 24px;
+      left: 32px;
+      right: 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 20;
+      transition: var(--hud-transition);
+    }
+
+    .scene-indicator {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface-color);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--surface-border);
+      padding: 8px 18px;
+      border-radius: 40px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    .pulse-dot {
+      width: 10px;
+      height: 10px;
+      background: var(--accent-red);
+      border-radius: 50%;
+      box-shadow: 0 0 12px var(--accent-red);
+      animation: pulseAnimation 2s infinite;
+    }
+
+    @keyframes pulseAnimation {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 18px var(--accent-red); }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+
+    .scene-title {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .hud-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .hud-btn {
+      background: var(--surface-color);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--surface-border);
+      color: var(--text-main);
+      padding: 9px 16px;
+      border-radius: 40px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    }
+
+    .hud-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.35);
+      transform: translateY(-2px);
+    }
+
+    .hud-btn.active {
+      border-color: var(--accent-red);
+      box-shadow: 0 0 16px var(--accent-glow);
+    }
+
+    /* 재생 프로그레스 바 */
+    .video-progress-container {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.15);
+      z-index: 10;
+      cursor: pointer;
+      transition: height 0.2s ease;
+    }
+
+    .video-progress-container:hover {
+      height: 8px;
+    }
+
+    .video-progress-fill {
+      width: 0%;
+      height: 100%;
+      background: var(--accent-red);
+      box-shadow: 0 0 8px var(--accent-glow);
+      transition: width 0.1s linear;
+    }
+
+    /* 하단 선택지 영역 */
+    .choices-overlay {
+      position: absolute;
+      bottom: 50px;
+      left: 50%;
+      transform: translateX(-50%) translateY(40px);
+      width: 90%;
+      max-width: 980px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      z-index: 30;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .choices-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .choice-prompt-header {
+      margin-bottom: 18px;
+      text-align: center;
+    }
+
+    .prompt-badge {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--accent-red);
+      background: rgba(229, 9, 20, 0.12);
+      border: 1px solid rgba(229, 9, 20, 0.4);
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .choice-heading {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+    }
+
+    /* 결정 타이머 바 */
+    .decision-timer-bar {
+      width: 100%;
+      max-width: 460px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      margin-bottom: 22px;
+      overflow: hidden;
+      position: relative;
+      display: none;
+    }
+
+    .decision-timer-bar.active {
+      display: block;
+    }
+
+    .decision-timer-fill {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, #ff416c, #ff4b2b);
+      box-shadow: 0 0 10px rgba(255, 65, 108, 0.8);
+      transform-origin: left;
+    }
+
+    /* 선택지 그리드 */
+    .choices-grid {
+      display: flex;
+      justify-content: center;
+      gap: 18px;
+      width: 100%;
+      flex-wrap: wrap;
+    }
+
+    .choice-card {
+      flex: 1;
+      min-width: 240px;
+      max-width: 320px;
+      background: rgba(20, 20, 28, 0.82);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 16px;
+      padding: 22px 24px;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+
+    .choice-card:hover {
+      background: rgba(36, 36, 52, 0.92);
+      border-color: rgba(255, 255, 255, 0.4);
+      transform: translateY(-6px) scale(1.02);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 25px rgba(255, 255, 255, 0.15);
+    }
+
+    .choice-card.back-choice {
+      border-color: rgba(0, 242, 254, 0.35);
+      background: rgba(12, 24, 36, 0.85);
+    }
+
+    .choice-card.back-choice:hover {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 25px var(--accent-cyan-glow);
+    }
+
+    .choice-card.back-choice .choice-icon {
+      color: var(--accent-cyan);
+    }
+
+    .choice-icon {
+      font-size: 24px;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+
+    .choice-title {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.35;
+      margin-bottom: 6px;
+      color: #ffffff;
+    }
+
+    .choice-subtext {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .key-hint {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 7px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    /* 시작 인트로 오버레이 */
+    .intro-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(5, 5, 8, 0.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 50;
+      transition: opacity 0.5s ease;
+      padding: 24px;
+      text-align: center;
+    }
+
+    .intro-overlay.hide {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .intro-logo {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 4px;
+      color: var(--accent-red);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .intro-title {
+      font-size: 38px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 14px;
+      background: linear-gradient(180deg, #fff 0%, #a5a5b5 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .intro-desc {
+      max-width: 580px;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #b0b0c0;
+      margin-bottom: 30px;
+    }
+
+    .start-btn {
+      background: linear-gradient(135deg, #e50914 0%, #b20710 100%);
+      color: white;
+      border: none;
+      font-size: 17px;
+      font-weight: 700;
+      padding: 15px 38px;
+      border-radius: 50px;
+      cursor: pointer;
+      box-shadow: 0 10px 30px var(--accent-glow);
+      transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .start-btn:hover {
+      transform: translateY(-3px) scale(1.03);
+      box-shadow: 0 16px 40px rgba(229, 9, 20, 0.7);
+    }
+
+    /* 로컬 파일 드래그앤드롭 / 일괄 탑재 패널 */
+    .file-loader-box {
+      margin-top: 10px;
+      padding: 14px 22px;
+      border: 1px dashed rgba(255, 255, 255, 0.25);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.04);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      max-width: 520px;
+      transition: all 0.2s;
+    }
+
+    .file-loader-box.dragover {
+      border-color: var(--accent-cyan);
+      background: rgba(0, 242, 254, 0.1);
+    }
+
+    .file-loader-text {
+      font-size: 13px;
+      color: #cfcfe0;
+    }
+
+    .file-select-label {
+      font-size: 12px;
+      color: var(--accent-cyan);
+      text-decoration: underline;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .hidden-input {
+      display: none;
+    }
+
+    .loaded-badge {
+      font-size: 11px;
+      color: #00ffaa;
+      font-weight: 600;
+    }
+
+    /* 스토리 맵 모달 */
+    .modal-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      z-index: 60;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      padding: 24px;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .map-modal-card {
+      background: #111118;
+      border: 1px solid var(--surface-border);
+      border-radius: 24px;
+      width: 95%;
+      max-width: 900px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9);
+    }
+
+    .modal-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--surface-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-title {
+      font-size: 19px;
+      font-weight: 700;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 24px;
+      cursor: pointer;
+      padding: 4px;
+      line-height: 1;
+    }
+
+    .close-btn:hover {
+      color: white;
+    }
+
+    .map-content-area {
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    .flow-diagram-container {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .tree-level {
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .node-chip {
+      padding: 11px 18px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .node-chip:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .node-chip.current {
+      border-color: var(--accent-red);
+      background: rgba(229, 9, 20, 0.2);
+      color: white;
+      box-shadow: 0 0 16px var(--accent-glow);
+    }
+
+    .node-chip.visited {
+      border-color: var(--accent-cyan);
+      color: #c0f4f9;
+    }
+
+    /* 토스트 메시지 */
+    .toast-msg {
+      position: absolute;
+      top: 85px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: rgba(20, 20, 28, 0.92);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 9px 22px;
+      border-radius: 30px;
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+      z-index: 100;
+    }
+
+    .toast-msg.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    @media (max-width: 768px) {
+      .choices-grid { flex-direction: column; }
+      .choice-card { max-width: 100%; padding: 16px; }
+      .intro-title { font-size: 26px; }
+      .top-hud { top: 12px; left: 14px; right: 14px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="player-wrapper">
+    <!-- 비디오 뷰포트 레이어 -->
+    <div class="video-stage">
+      <video id="videoA" class="video-layer active" playsinline preload="auto"></video>
+      <video id="videoB" class="video-layer" playsinline preload="auto"></video>
+      <canvas id="simulatorCanvas"></canvas>
+
+      <div class="cinematic-vignette"></div>
+      <div id="choiceDimmer" class="choice-dimmer"></div>
+    </div>
+
+    <!-- 비디오 재생 프로그레스 바 -->
+    <div class="video-progress-container">
+      <div id="videoProgressFill" class="video-progress-fill"></div>
+    </div>
+
+    <!-- 상단 글로벌 HUD -->
+    <header class="top-hud">
+      <div class="scene-indicator">
+        <div class="pulse-dot"></div>
+        <span id="sceneIndicatorText" class="scene-title">준비 중...</span>
+      </div>
+
+      <div class="hud-actions">
+        <!-- 상단에서도 영상 파일 일괄 로드 가능 -->
+        <label for="videoFileInputTop" class="hud-btn" style="cursor:pointer;" title="로컬 영상 파일(1.mp4 ~ 11.mp4) 불러오기">
+          <span>📂</span> 영상 불러오기
+        </label>
+        <input type="file" id="videoFileInputTop" class="hidden-input" multiple accept="video/*">
+
+        <button id="timerToggleBtn" class="hud-btn" title="선택지 제한시간 카운트다운">
+          <span>⏳</span> 타이머
+        </button>
+        <button id="modeToggleBtn" class="hud-btn" title="실제 영상 / 가상 시네마틱 데모 전환">
+          <span>🎬</span> 모드 전환
+        </button>
+        <button id="mapBtn" class="hud-btn" title="전체 스토리 분기 트리 보기 (단축키: M)">
+          <span>🗺️</span> 스토리 맵
+        </button>
+        <button id="fullscreenBtn" class="hud-btn" title="전체화면 (단축키: F)">
+          <span>⛶</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 하단 선택지 영역 -->
+    <section id="choicesOverlay" class="choices-overlay" aria-label="선택지 오버레이">
+      <div class="choice-prompt-header">
+        <div class="prompt-badge">DECISION POINT</div>
+        <h2 id="choicePromptTitle" class="choice-heading">다음 행동을 선택하십시오</h2>
+      </div>
+
+      <div id="decisionTimerBar" class="decision-timer-bar">
+        <div id="decisionTimerFill" class="decision-timer-fill"></div>
+      </div>
+
+      <div id="choicesGrid" class="choices-grid">
+        <!-- JS로 동적 생성 -->
+      </div>
+    </section>
+
+    <!-- 인트로 시작 오버레이 -->
+    <div id="introOverlay" class="intro-overlay">
+      <div class="intro-logo">Standalone Interactive Experience</div>
+      <h1 class="intro-title">블랙미러 인터랙티브 시네마</h1>
+      <p class="intro-desc">
+        영상이 끝나면 마지막 장면에 자연스럽게 정지된 상태로 선택지가 주어집니다.<br>
+        선택에 따라 다음 사건이 전개되거나 이전 영상으로 되돌아갈 수 있습니다.
+      </p>
+
+      <button id="startExperienceBtn" class="start-btn">
+        <span>▶</span> 인터랙티브 시작하기
+      </button>
+
+      <!-- 로컬 영상 드래그 앤 드롭 및 일괄 선택 영역 -->
+      <div class="file-loader-box" id="dropZone">
+        <div class="file-loader-text">
+          📁 <strong>영상 파일(1.mp4 ~ 11.mp4)</strong>을 이곳에 드래그하거나 
+          <label for="videoFileInputMain" class="file-select-label">파일 선택</label>을 누르세요.
+        </div>
+        <input type="file" id="videoFileInputMain" class="hidden-input" multiple accept="video/*">
+        <div id="loadedStatusText" class="file-loader-text" style="color: #9090a8; font-size: 11px;">
+          * 파일이 없어도 고화질 가상 시네마틱 데모 모드로 바로 작동합니다.
+        </div>
+      </div>
+    </div>
+
+    <!-- 스토리 맵 모달 -->
+    <div id="mapModal" class="modal-overlay">
+      <div class="map-modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title">🧭 전체 분기 맵 (Story Navigation)</h3>
+          <button id="closeMapBtn" class="close-btn" aria-label="닫기">✕</button>
+        </div>
+        <div id="flowDiagramArea" class="map-content-area"></div>
+      </div>
+    </div>
+
+    <!-- 토스트 알림 -->
+    <div id="toastMsg" class="toast-msg"></div>
+  </div>
+
+  <!-- ==========================================================================
+       2. 인터랙티브 비디오 엔진 & 시뮬레이터 JavaScript
+       ========================================================================== -->
+  <script>
+    // 1. 스토리 분기 그래프 정의
+    const STORY_GRAPH = {
+      1: {
+        id: 1,
+        title: "1번 영상: 운명의 시작",
+        desc: "모든 이야기가 시작되는 첫 번째 분기점입니다.",
+        defaultSrc: "videos/1.mp4",
+        choices: [
+          { text: "2번 영상으로 진행", target: 2, subtext: "새로운 선택지로 나아갑니다", key: "1" },
+          { text: "3번 영상으로 진행", target: 3, subtext: "또 다른 갈림길로 진입합니다", key: "2" }
+        ]
+      },
+      2: {
+        id: 2,
+        title: "2번 영상: 첫 번째 갈림길 A",
+        desc: "2번 영상이 재생되고 다음 행동을 결정해야 합니다.",
+        defaultSrc: "videos/2.mp4",
+        choices: [
+          { text: "1번 영상으로 되돌아가기", target: 1, subtext: "이전 영상으로 회귀합니다", isBack: true, key: "1" },
+          { text: "4번 영상으로 진행", target: 4, subtext: "루트 A 심화", key: "2" },
+          { text: "5번 영상으로 진행", target: 5, subtext: "루트 B 진입", key: "3" }
+        ]
+      },
+      3: {
+        id: 3,
+        title: "3번 영상: 첫 번째 갈림길 B",
+        desc: "3번 영상이 재생되고 다음 행동을 결정해야 합니다.",
+        defaultSrc: "videos/3.mp4",
+        choices: [
+          { text: "1번 영상으로 되돌아가기", target: 1, subtext: "이전 영상으로 회귀합니다", isBack: true, key: "1" },
+          { text: "6번 영상으로 진행", target: 6, subtext: "루트 C 진입", key: "2" },
+          { text: "7번 영상으로 진행", target: 7, subtext: "루트 D 진입", key: "3" }
+        ]
+      },
+      4: {
+        id: 4,
+        title: "4번 영상: 깊어지는 전개 A-1",
+        desc: "4번 영상이 재생 중입니다. 결말로 향하고 있습니다.",
+        defaultSrc: "videos/4.mp4",
+        choices: [
+          { text: "2번 영상으로 되돌아가기", target: 2, subtext: "이전 영상으로 회귀합니다", isBack: true, key: "1" },
+          { text: "8번 영상으로 진행 (결말)", target: 8, subtext: "최종 스토리 라인으로 이동", key: "2" }
+        ]
+      },
+      5: {
+        id: 5,
+        title: "5번 영상: 깊어지는 전개 A-2",
+        desc: "5번 영상이 재생 중입니다. 결말로 향하고 있습니다.",
+        defaultSrc: "videos/5.mp4",
+        choices: [
+          { text: "2번 영상으로 되돌아가기", target: 2, subtext: "이전 영상으로 회귀합니다", isBack: true, key: "1" },
+          { text: "9번 영상으로 진행 (결말)", target: 9, subtext: "최종 스토리 라인으로 이동", key: "2" }
+        ]
+      },
+      6: {
+        id: 6,
+        title: "6번 영상: 깊어지는 전개 B-1",
+        desc: "6번 영상이 재생 중입니다. 결말로 향하고 있습니다.",
+        defaultSrc: "videos/6.mp4",
+        choices: [
+          { text: "3번 영상으로 되돌아가기", target: 3, subtext: "이전 영상으로 회귀합니다", isBack: true, key: "1" },
+          { text: "10번 영상으로 진행 (결말)", target: 10, subtext: "최종 스토리 라인으로 이동", key: "2" }
+        ]
+      },
+      7: {
+        id: 7,
+        title: "7번 영상: 깊어지는 전개 B-2",
+        desc: "7번 영상이 재생 중입니다. 결말로 향하고 있습니다.",
+        defaultSrc: "videos/7.mp4",
+        choices: [
+          { text: "3번 영상으로 되돌아가기", target: 3, subtext: "이전 영상으로 회귀합니다", isBack: true, key: "1" },
+          { text: "11번 영상으로 진행 (결말)", target: 11, subtext: "최종 스토리 라인으로 이동", key: "2" }
+        ]
+      },
+      8: {
+        id: 8,
+        title: "8번 영상: 결말 라인 1",
+        desc: "4번 영상에서 이어진 첫 번째 최종 결말입니다.",
+        defaultSrc: "videos/8.mp4",
+        choices: [
+          { text: "4번 영상으로 되돌아가기", target: 4, subtext: "이전 선택지로 회귀", isBack: true, key: "1" },
+          { text: "처음부터 다시 시작 (1번 영상)", target: 1, subtext: "새로운 운명을 개척합니다", key: "2" }
+        ]
+      },
+      9: {
+        id: 9,
+        title: "9번 영상: 결말 라인 2",
+        desc: "5번 영상에서 이어진 두 번째 최종 결말입니다.",
+        defaultSrc: "videos/9.mp4",
+        choices: [
+          { text: "5번 영상으로 되돌아가기", target: 5, subtext: "이전 선택지로 회귀", isBack: true, key: "1" },
+          { text: "처음부터 다시 시작 (1번 영상)", target: 1, subtext: "새로운 운명을 개척합니다", key: "2" }
+        ]
+      },
+      10: {
+        id: 10,
+        title: "10번 영상: 결말 라인 3",
+        desc: "6번 영상에서 이어진 세 번째 최종 결말입니다.",
+        defaultSrc: "videos/10.mp4",
+        choices: [
+          { text: "6번 영상으로 되돌아가기", target: 6, subtext: "이전 선택지로 회귀", isBack: true, key: "1" },
+          { text: "처음부터 다시 시작 (1번 영상)", target: 1, subtext: "새로운 운명을 개척합니다", key: "2" }
+        ]
+      },
+      11: {
+        id: 11,
+        title: "11번 영상: 결말 라인 4",
+        desc: "7번 영상에서 이어진 네 번째 최종 결말입니다.",
+        defaultSrc: "videos/11.mp4",
+        choices: [
+          { text: "7번 영상으로 되돌아가기", target: 7, subtext: "이전 선택지로 회귀", isBack: true, key: "1" },
+          { text: "처음부터 다시 시작 (1번 영상)", target: 1, subtext: "새로운 운명을 개척합니다", key: "2" }
+        ]
+      }
+    };
+
+    // 2. 엔진 코어 클래스
+    class StandaloneInteractivePlayer {
+      constructor() {
+        this.currentSceneId = 1;
+        this.visitedHistory = [1];
+        this.useSimulator = false;
+        this.decisionTimerEnabled = false;
+        this.timerDuration = 12;
+        this.timerCountdownInterval = null;
+        this.audioContext = null;
+
+        // 사용자가 로컬에서 직접 바인딩한 비디오 Blob Map (예: { 1: "blob:...", 2: "blob:..." })
+        this.customVideoBlobMap = {};
+
+        // DOM 요소 캐싱
+        this.videoA = document.getElementById("videoA");
+        this.videoB = document.getElementById("videoB");
+        this.currentVideoElem = this.videoA;
+        this.nextVideoElem = this.videoB;
+
+        this.simCanvas = document.getElementById("simulatorCanvas");
+        this.simCtx = this.simCanvas ? this.simCanvas.getContext("2d") : null;
+        this.simAnimationId = null;
+        this.simStartTime = 0;
+        this.simDuration = 5500; // 5.5초
+
+        this.choicesOverlay = document.getElementById("choicesOverlay");
+        this.choiceDimmer = document.getElementById("choiceDimmer");
+        this.choicesGrid = document.getElementById("choicesGrid");
+        this.choicePromptTitle = document.getElementById("choicePromptTitle");
+        this.decisionTimerBar = document.getElementById("decisionTimerBar");
+        this.decisionTimerFill = document.getElementById("decisionTimerFill");
+
+        this.sceneIndicatorText = document.getElementById("sceneIndicatorText");
+        this.videoProgressFill = document.getElementById("videoProgressFill");
+        this.mapModal = document.getElementById("mapModal");
+        this.toastElem = document.getElementById("toastMsg");
+
+        this.init();
+      }
+
+      init() {
+        this.setupEventListeners();
+        this.setupFileLoader();
+        this.buildMapModal();
+      }
+
+      // 사운드 피드백 (Web Audio API)
+      playAudio(type = "click") {
+        try {
+          if (!this.audioContext) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            this.audioContext = new AudioCtx();
+          }
+          if (this.audioContext.state === "suspended") {
+            this.audioContext.resume();
+          }
+          const ctx = this.audioContext;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          const now = ctx.currentTime;
+
+          if (type === "choiceAppear") {
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(120, now);
+            osc.frequency.exponentialRampToValueAtTime(50, now + 0.6);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.6);
+            osc.start(now);
+            osc.stop(now + 0.6);
+          } else if (type === "click") {
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(520, now);
+            osc.frequency.exponentialRampToValueAtTime(880, now + 0.12);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+            osc.start(now);
+            osc.stop(now + 0.12);
+          } else if (type === "back") {
+            osc.type = "triangle";
+            osc.frequency.setValueAtTime(620, now);
+            osc.frequency.exponentialRampToValueAtTime(310, now + 0.2);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+            osc.start(now);
+            osc.stop(now + 0.2);
+          }
+        } catch (e) {}
+      }
+
+      showToast(msg) {
+        if (!this.toastElem) return;
+        this.toastElem.textContent = msg;
+        this.toastElem.classList.add("show");
+        clearTimeout(this.toastTimeout);
+        this.toastTimeout = setTimeout(() => {
+          this.toastElem.classList.remove("show");
+        }, 2800);
+      }
+
+      // 로컬 비디오 파일 드래그앤드롭 / 선택기 바인딩
+      setupFileLoader() {
+        const handleFiles = (files) => {
+          let count = 0;
+          Array.from(files).forEach(file => {
+            // 파일명에서 숫자 추출 (예: "1.mp4", "scene_2.webm", "3" 등)
+            const match = file.name.match(/\d+/);
+            if (match) {
+              const sceneNum = parseInt(match[0], 10);
+              if (sceneNum >= 1 && sceneNum <= 11) {
+                const blobUrl = URL.createObjectURL(file);
+                this.customVideoBlobMap[sceneNum] = blobUrl;
+                count++;
+              }
+            }
+          });
+
+          if (count > 0) {
+            this.useSimulator = false;
+            this.showToast(`✨ ${count}개의 로컬 영상 파일이 완벽하게 등록되었습니다!`);
+            const statusBadge = document.getElementById("loadedStatusText");
+            if (statusBadge) {
+              statusBadge.innerHTML = `<span class="loaded-badge">✓ 로컬 영상 ${count}개 탑재 완료 (브라우저 메모리 연결)</span>`;
+            }
+          } else {
+            this.showToast("파일 이름에 번호(1~11)가 포함된 영상 파일을 선택해 주세요.");
+          }
+        };
+
+        const inputMain = document.getElementById("videoFileInputMain");
+        const inputTop = document.getElementById("videoFileInputTop");
+        [inputMain, inputTop].forEach(input => {
+          if (input) {
+            input.addEventListener("change", (e) => {
+              if (e.target.files && e.target.files.length > 0) {
+                handleFiles(e.target.files);
+              }
+            });
+          }
+        });
+
+        const dropZone = document.getElementById("dropZone");
+        if (dropZone) {
+          dropZone.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            dropZone.classList.add("dragover");
+          });
+          dropZone.addEventListener("dragleave", () => {
+            dropZone.classList.remove("dragover");
+          });
+          dropZone.addEventListener("drop", (e) => {
+            e.preventDefault();
+            dropZone.classList.remove("dragover");
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+              handleFiles(e.dataTransfer.files);
+            }
+          });
+        }
+      }
+
+      setupEventListeners() {
+        // 시작 버튼
+        document.getElementById("startExperienceBtn")?.addEventListener("click", () => {
+          document.getElementById("introOverlay").classList.add("hide");
+          this.playAudio("click");
+          this.loadScene(1);
+        });
+
+        // 비디오 이벤트
+        [this.videoA, this.videoB].forEach(video => {
+          video.addEventListener("timeupdate", () => {
+            if (video === this.currentVideoElem && video.duration) {
+              const pct = (video.currentTime / video.duration) * 100;
+              this.videoProgressFill.style.width = `${pct}%`;
+            }
+          });
+
+          // 영상 종료: 화면 꺼지지 않고 마지막 프레임 정지 고정 + 선택지 표시!
+          video.addEventListener("ended", () => {
+            if (video === this.currentVideoElem) {
+              video.pause();
+              this.onVideoFinished();
+            }
+          });
+
+          // 파일 로드 실패 시 가상 데모 캔버스로 Fallback
+          video.addEventListener("error", () => {
+            if (video === this.currentVideoElem && !this.useSimulator) {
+              this.useSimulator = true;
+              this.showToast("영상 파일이 없거나 접근 불가하여 '시네마틱 데모 모드'로 자동 전환되었습니다.");
+              this.startCanvasSimulator(this.currentSceneId);
+            }
+          });
+        });
+
+        // 단축키
+        window.addEventListener("keydown", (e) => {
+          if (["1", "2", "3"].includes(e.key)) {
+            const btn = document.querySelector(`.choice-card[data-key="${e.key}"]`);
+            if (btn && this.choicesOverlay.classList.contains("show")) btn.click();
+          } else if (e.key.toLowerCase() === "m") {
+            this.toggleMapModal();
+          } else if (e.key.toLowerCase() === "f") {
+            this.toggleFullscreen();
+          } else if (e.key === " ") {
+            e.preventDefault();
+            this.togglePlayPause();
+          }
+        });
+
+        // HUD 제어 버튼들
+        document.getElementById("mapBtn")?.addEventListener("click", () => this.toggleMapModal());
+        document.getElementById("closeMapBtn")?.addEventListener("click", () => this.toggleMapModal());
+        document.getElementById("fullscreenBtn")?.addEventListener("click", () => this.toggleFullscreen());
+        
+        const timerToggleBtn = document.getElementById("timerToggleBtn");
+        if (timerToggleBtn) {
+          timerToggleBtn.addEventListener("click", () => {
+            this.decisionTimerEnabled = !this.decisionTimerEnabled;
+            timerToggleBtn.classList.toggle("active", this.decisionTimerEnabled);
+            this.showToast(this.decisionTimerEnabled ? "⏳ 선택 타이머 켜짐" : "⏳ 무제한 선택 모드");
+          });
+        }
+
+        const modeToggleBtn = document.getElementById("modeToggleBtn");
+        if (modeToggleBtn) {
+          modeToggleBtn.addEventListener("click", () => {
+            this.useSimulator = !this.useSimulator;
+            modeToggleBtn.classList.toggle("active", this.useSimulator);
+            this.showToast(this.useSimulator ? "모드: 가상 캔버스 데모" : "모드: 로컬 영상 파일 재생");
+            this.loadScene(this.currentSceneId);
+          });
+        }
+
+        this.mapModal?.addEventListener("click", (e) => {
+          if (e.target === this.mapModal) this.toggleMapModal();
+        });
+
+        window.addEventListener("resize", () => {
+          if (this.simCanvas) {
+            this.simCanvas.width = window.innerWidth;
+            this.simCanvas.height = window.innerHeight;
+          }
+        });
+      }
+
+      // 씬 로드
+      loadScene(sceneId) {
+        const sceneData = STORY_GRAPH[sceneId];
+        if (!sceneData) return;
+
+        this.currentSceneId = sceneId;
+        if (!this.visitedHistory.includes(sceneId)) this.visitedHistory.push(sceneId);
+
+        this.hideChoices();
+        this.updateHUD(sceneData);
+        this.updateMapHighlights();
+
+        if (this.useSimulator) {
+          this.startCanvasSimulator(sceneId);
+        } else {
+          // 사용자가 탑재한 blob url이 있으면 우선 사용, 없으면 defaultSrc
+          const videoSrc = this.customVideoBlobMap[sceneId] || sceneData.defaultSrc;
+          this.playRealVideo(videoSrc);
+        }
+      }
+
+      // 비디오 크로스페이드 재생
+      playRealVideo(src) {
+        if (this.simAnimationId) {
+          cancelAnimationFrame(this.simAnimationId);
+          this.simAnimationId = null;
+        }
+        this.simCanvas.classList.remove("active");
+
+        const activeVideo = this.currentVideoElem;
+        const incomingVideo = this.nextVideoElem;
+
+        incomingVideo.src = src;
+        incomingVideo.load();
+        incomingVideo.currentTime = 0;
+
+        const playPromise = incomingVideo.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              incomingVideo.classList.add("active");
+              activeVideo.classList.remove("active");
+              this.currentVideoElem = incomingVideo;
+              this.nextVideoElem = activeVideo;
+              this.nextVideoElem.pause();
+            })
+            .catch(err => {
+              this.useSimulator = true;
+              this.startCanvasSimulator(this.currentSceneId);
+            });
+        }
+      }
+
+      onVideoFinished() {
+        this.playAudio("choiceAppear");
+        this.showChoices();
+      }
+
+      showChoices() {
+        const sceneData = STORY_GRAPH[this.currentSceneId];
+        if (!sceneData || !sceneData.choices) return;
+
+        this.choicePromptTitle.textContent = `${sceneData.title} - 다음 행동을 선택하십시오`;
+        this.choicesGrid.innerHTML = "";
+
+        sceneData.choices.forEach((choice, index) => {
+          const card = document.createElement("div");
+          card.className = `choice-card ${choice.isBack ? "back-choice" : ""}`;
+          card.dataset.key = choice.key || (index + 1);
+
+          const icon = choice.isBack ? "↺" : "➔";
+          card.innerHTML = `
+            <span class="key-hint">${choice.key || (index + 1)}</span>
+            <div class="choice-icon">${icon}</div>
+            <div class="choice-title">${choice.text}</div>
+            <div class="choice-subtext">${choice.subtext || ""}</div>
+          `;
+
+          card.addEventListener("click", () => this.selectChoice(choice));
+          this.choicesGrid.appendChild(card);
+        });
+
+        this.choiceDimmer.classList.add("visible");
+        this.choicesOverlay.classList.add("show");
+
+        if (this.decisionTimerEnabled) {
+          this.startDecisionTimer();
+        } else {
+          this.decisionTimerBar.classList.remove("active");
+        }
+      }
+
+      hideChoices() {
+        this.choicesOverlay.classList.remove("show");
+        this.choiceDimmer.classList.remove("visible");
+        if (this.timerCountdownInterval) {
+          clearInterval(this.timerCountdownInterval);
+          this.timerCountdownInterval = null;
+        }
+        this.decisionTimerBar.classList.remove("active");
+        this.videoProgressFill.style.width = "0%";
+      }
+
+      selectChoice(choice) {
+        this.playAudio(choice.isBack ? "back" : "click");
+        this.hideChoices();
+        this.loadScene(choice.target);
+      }
+
+      startDecisionTimer() {
+        if (this.timerCountdownInterval) clearInterval(this.timerCountdownInterval);
+        this.decisionTimerBar.classList.add("active");
+        this.decisionTimerFill.style.width = "100%";
+
+        const totalMs = this.timerDuration * 1000;
+        const startTime = Date.now();
+
+        this.timerCountdownInterval = setInterval(() => {
+          const elapsed = Date.now() - startTime;
+          const remaining = Math.max(0, totalMs - elapsed);
+          const pct = (remaining / totalMs) * 100;
+          this.decisionTimerFill.style.width = `${pct}%`;
+
+          if (remaining <= 0) {
+            clearInterval(this.timerCountdownInterval);
+            const sceneData = STORY_GRAPH[this.currentSceneId];
+            if (sceneData && sceneData.choices && sceneData.choices.length > 0) {
+              this.selectChoice(sceneData.choices[0]);
+            }
+          }
+        }, 50);
+      }
+
+      updateHUD(sceneData) {
+        if (this.sceneIndicatorText) {
+          this.sceneIndicatorText.textContent = sceneData.title;
+        }
+      }
+
+      // 시네마틱 캔버스 시뮬레이터
+      startCanvasSimulator(sceneId) {
+        if (this.simAnimationId) cancelAnimationFrame(this.simAnimationId);
+        this.currentVideoElem.classList.remove("active");
+        this.nextVideoElem.classList.remove("active");
+        this.simCanvas.classList.add("active");
+
+        this.simCanvas.width = window.innerWidth;
+        this.simCanvas.height = window.innerHeight;
+
+        const sceneData = STORY_GRAPH[sceneId];
+        this.simStartTime = performance.now();
+        let hasTriggeredEnd = false;
+        const hue = (sceneId * 38) % 360;
+
+        const render = (time) => {
+          const elapsed = time - this.simStartTime;
+          const progress = Math.min(1, elapsed / this.simDuration);
+          this.videoProgressFill.style.width = `${progress * 100}%`;
+
+          const ctx = this.simCtx;
+          const w = this.simCanvas.width;
+          const h = this.simCanvas.height;
+
+          const bgGrad = ctx.createRadialGradient(w/2, h/2, 50, w/2, h/2, Math.max(w, h));
+          bgGrad.addColorStop(0, `hsl(${hue}, 40%, 15%)`);
+          bgGrad.addColorStop(0.6, `hsl(${hue + 20}, 50%, 6%)`);
+          bgGrad.addColorStop(1, '#050508');
+          ctx.fillStyle = bgGrad;
+          ctx.fillRect(0, 0, w, h);
+
+          // 그리드
+          ctx.strokeStyle = `hsla(${hue}, 70%, 50%, 0.15)`;
+          ctx.lineWidth = 1;
+          const gridSize = 60;
+          for (let x = 0; x < w; x += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, h);
+            ctx.stroke();
+          }
+          for (let y = 0; y < h; y += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w, y);
+            ctx.stroke();
+          }
+
+          // 파동 링
+          for (let i = 0; i < 3; i++) {
+            const pPhase = ((elapsed * 0.001 + i * 0.33) % 1);
+            const radius = pPhase * Math.min(w, h) * 0.45;
+            ctx.beginPath();
+            ctx.arc(w/2, h/2, radius, 0, Math.PI * 2);
+            ctx.strokeStyle = `hsla(${hue}, 80%, 60%, ${1 - pPhase})`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+
+          ctx.save();
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+
+          ctx.fillStyle = `hsl(${hue}, 90%, 60%)`;
+          ctx.font = "bold 15px sans-serif";
+          ctx.fillText(`[ V I D E O  S C E N E  # ${sceneId} ]`, w/2, h/2 - 70);
+
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 36px sans-serif";
+          ctx.fillText(sceneData.title, w/2, h/2 - 20);
+
+          ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+          ctx.font = "16px sans-serif";
+          ctx.fillText(sceneData.desc, w/2, h/2 + 25);
+
+          const curSec = (Math.min(elapsed, this.simDuration) / 1000).toFixed(2);
+          const totalSec = (this.simDuration / 1000).toFixed(2);
+          ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+          ctx.font = "13px monospace";
+          ctx.fillText(`TC: 00:00:0${curSec} / 00:00:0${totalSec} [CINEMATIC DEMO]`, w/2, h/2 + 65);
+          ctx.restore();
+
+          if (progress < 1) {
+            this.simAnimationId = requestAnimationFrame(render);
+          } else {
+            if (!hasTriggeredEnd) {
+              hasTriggeredEnd = true;
+              this.onVideoFinished();
+            }
+          }
+        };
+
+        this.simAnimationId = requestAnimationFrame(render);
+      }
+
+      // 스토리 맵 구축
+      buildMapModal() {
+        const container = document.getElementById("flowDiagramArea");
+        if (!container) return;
+
+        container.innerHTML = `
+          <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px; text-align: center;">
+            노드를 클릭하면 해당 영상 시점으로 즉시 이동할 수 있습니다.
+          </div>
+          <div class="flow-diagram-container">
+            <div class="tree-level">
+              <div class="node-chip" data-node="1" onclick="appInstance.jumpToScene(1)">1번 영상 (시작)</div>
+            </div>
+            <div style="text-align:center; color:rgba(255,255,255,0.2);">▼</div>
+            <div class="tree-level">
+              <div class="node-chip" data-node="2" onclick="appInstance.jumpToScene(2)">2번 영상 (A 분기)</div>
+              <div class="node-chip" data-node="3" onclick="appInstance.jumpToScene(3)">3번 영상 (B 분기)</div>
+            </div>
+            <div style="text-align:center; color:rgba(255,255,255,0.2);">▼</div>
+            <div class="tree-level">
+              <div class="node-chip" data-node="4" onclick="appInstance.jumpToScene(4)">4번 영상</div>
+              <div class="node-chip" data-node="5" onclick="appInstance.jumpToScene(5)">5번 영상</div>
+              <div class="node-chip" data-node="6" onclick="appInstance.jumpToScene(6)">6번 영상</div>
+              <div class="node-chip" data-node="7" onclick="appInstance.jumpToScene(7)">7번 영상</div>
+            </div>
+            <div style="text-align:center; color:rgba(255,255,255,0.2);">▼</div>
+            <div class="tree-level">
+              <div class="node-chip" data-node="8" onclick="appInstance.jumpToScene(8)">8번 (결말 1)</div>
+              <div class="node-chip" data-node="9" onclick="appInstance.jumpToScene(9)">9번 (결말 2)</div>
+              <div class="node-chip" data-node="10" onclick="appInstance.jumpToScene(10)">10번 (결말 3)</div>
+              <div class="node-chip" data-node="11" onclick="appInstance.jumpToScene(11)">11번 (결말 4)</div>
+            </div>
+          </div>
+        `;
+        this.updateMapHighlights();
+      }
+
+      updateMapHighlights() {
+        document.querySelectorAll(".node-chip").forEach(chip => {
+          const nodeNum = parseInt(chip.dataset.node, 10);
+          chip.classList.toggle("current", nodeNum === this.currentSceneId);
+          chip.classList.toggle("visited", this.visitedHistory.includes(nodeNum) && nodeNum !== this.currentSceneId);
+        });
+      }
+
+      toggleMapModal() {
+        if (!this.mapModal) return;
+        const isOpen = this.mapModal.classList.contains("open");
+        if (isOpen) {
+          this.mapModal.classList.remove("open");
+        } else {
+          this.updateMapHighlights();
+          this.mapModal.classList.add("open");
+        }
+      }
+
+      jumpToScene(sceneId) {
+        this.toggleMapModal();
+        this.loadScene(sceneId);
+        this.showToast(`${sceneId}번 영상으로 이동했습니다.`);
+      }
+
+      togglePlayPause() {
+        if (this.useSimulator) {
+          this.showToast("데모 시뮬레이터 재생 중");
+          return;
+        }
+        if (this.currentVideoElem.paused) {
+          this.currentVideoElem.play();
+          this.showToast("재생");
+        } else {
+          this.currentVideoElem.pause();
+          this.showToast("일시정지");
+        }
+      }
+
+      toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+          if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+        }
+      }
+    }
+
+    let appInstance = null;
+    window.addEventListener("DOMContentLoaded", () => {
+      appInstance = new StandaloneInteractivePlayer();
+    });
+  </script>
+</body>
+</html>
